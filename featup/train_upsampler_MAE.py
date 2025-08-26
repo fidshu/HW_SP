@@ -3,7 +3,7 @@ sys.path.insert(0, '../')
 sys.path.append('/mnt/pai-hdd/bknian/CLIP/SimFeatUp-main')
 import gc
 import os
-
+import torchvision
 import hydra
 import pytorch_lightning as pl
 import torch
@@ -130,7 +130,7 @@ class SimFeatUp(pl.LightningModule):
 
         if self.MAE:
             self.upsampler = SparseDecoder(self.upsampler, sbn=False, verbose=False)
-            self.len_keep = round(14 * 14 * (1 - 0.4897959183673469)) #10/14
+            self.len_keep = round(28 * 28 * (1 - 0.4897959183673469)) #24/28
             
             # 获取原始state_dict
             state_dict = state.get('module', state)
@@ -170,7 +170,8 @@ class SimFeatUp(pl.LightningModule):
         idx = idx[:, :self.len_keep].to(device)  # (B, len_keep)
         
         active = torch.zeros(B, h * w, dtype=torch.bool, device=device).scatter_(dim=1, index=idx, value=True).view(B, 1, h, w)
-        mask = torch.normal(mean = 0 , std = 1 ,size = [B, h * w], device=device).scatter_(dim=1, index=idx, value=True).view(B, 1, h, w)   
+        mask = torch.normal(mean = 0 , std = 1 ,size = [B, h * w], device=device).scatter_(dim=1, index=idx, value=True).view(B, 1, h, w)
+        # mask = (torch.rand(size = [B, h * w], device=device)/2+0.25).scatter_(dim=1, index=idx, value=True).view(B, 1, h, w) 
         return active,mask
 
     def forward(self, x):
@@ -220,15 +221,24 @@ class SimFeatUp(pl.LightningModule):
             else:
                 img, _ = batch
             if(self.MAE):
-                active_b1ff,mask = self.mask(img.shape[0], 14, 14, img.device)
+
+                active_b1ff,mask = self.mask(img.shape[0], 28, 28, img.device)
 
                 SparkDecoder._cur_active = active_b1ff
 
-                active_b1hw = active_b1ff.repeat_interleave(16, 2).repeat_interleave(16, 3)
+                active_b1hw = active_b1ff.repeat_interleave(8, 2).repeat_interleave(8, 3)
 
-                mask = mask.repeat_interleave(16, 2).repeat_interleave(16, 3)
+                mask = mask.repeat_interleave(8, 2).repeat_interleave(8, 3)
                 
                 masked_bchw = img * mask
+
+                torchvision.utils.save_image(masked_bchw, 'masked_img.jpg',normalize=True)
+
+                torchvision.utils.save_image(active_b1hw.float(), 'active_b1hw.jpg')
+                torchvision.utils.save_image(mask, 'mask.jpg')
+                torchvision.utils.save_image(img, '没有mae的输入.jpg',normalize=True)
+                print("已经保存好")
+                exit()
 
                 lr_feats = self.model(masked_bchw)
             else:
@@ -341,13 +351,13 @@ class SimFeatUp(pl.LightningModule):
                     img, _ = batch
                 # lr_feats = self.model(img)
                 if(self.MAE):
-                    active_b1ff,mask = self.mask(img.shape[0], 14, 14, img.device)
+                    active_b1ff,mask = self.mask(img.shape[0], 28, 28, img.device)
 
                     SparkDecoder._cur_active = active_b1ff
 
-                    active_b1hw = active_b1ff.repeat_interleave(16, 2).repeat_interleave(16, 3)
+                    active_b1hw = active_b1ff.repeat_interleave(8, 2).repeat_interleave(8, 3)
 
-                    mask = mask.repeat_interleave(16, 2).repeat_interleave(16, 3)
+                    mask = mask.repeat_interleave(8, 2).repeat_interleave(8, 3)
                     
                     masked_bchw = img * mask
 
