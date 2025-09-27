@@ -4,8 +4,8 @@ import torchvision
 import torch
 import torch.nn.functional as F
 from torch import nn
-
-
+import random
+from torchvision.transforms import GaussianBlur
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -279,7 +279,7 @@ class VisualTransformer(nn.Module):
         # self.len_keep = round(84 * 84 * (1 - 0.2857142857142857)) #60/84
         # self.len_keep = round(336 * 336 * (1 - 0.5)) #138/168
         # self.len_keep = round(336 * 336 * (1 - 0.9523809523809524)) #8/168
-        self.len_keep = round(336 * 336 * (1 - 0.9821428571428571)) #165/168
+        self.len_keep = round(21 * 21 * (1 - 0.25)) #165/168
         # self.MAE = True
 
     def mask(self, B: int, h: int, w: int, device, generator=None):
@@ -290,19 +290,96 @@ class VisualTransformer(nn.Module):
         active = torch.zeros(B, h * w, dtype=torch.bool, device=device).scatter_(dim=1, index=idx, value=True).view(B, 1, h, w)
         mask = torch.normal(mean = 0 , std = 1 ,size = [B, h * w], device=device).scatter_(dim=1, index=idx, value=True).view(B, 1, h, w)
         # mask = (torch.rand(size = [B, h * w], device=device)/2+0.25).scatter_(dim=1, index=idx, value=True).view(B, 1, h, w) 
-        return active,mask
+        return active,abs(mask)
+    
+    def mask_norm(self,mask):
+        image_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(mask.device)
+        image_std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(mask.device)
+        mask_normalized = (mask - image_mean) / image_std
+        return mask_normalized
 
+    def create_gaussian_blur(self, x, kernel_size=15, sigma=3.0):
+        """
+        使用torchvision的高斯模糊
+        """
+        # 确保kernel_size是奇数
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+        
+        blur_transform = GaussianBlur(kernel_size=kernel_size, sigma=sigma)
+        
+        # 对batch中的每张图像应用高斯模糊
+        blurred_images = []
+        for i in range(x.size(0)):
+            img = x[i]  # [C, H, W]
+            blurred_img = blur_transform(img)  # [C, H, W]
+            blurred_images.append(blurred_img)
+        
+        blurred_x = torch.stack(blurred_images, dim=0)  # [B, C, H, W]
+        return blurred_x
 
     def forward(self, x: torch.Tensor, dense=False):
-        random_value = torch.round(torch.rand(1)).item()
-        if(random_value == 1):
-            active_b1ff,mask = self.mask(x.shape[0], 336, 336, x.device)
-            active_b1hw = active_b1ff.repeat_interleave(1, 2).repeat_interleave(1, 3)
-            mask = mask.repeat_interleave(1, 2).repeat_interleave(1, 3)
-            masked_bchw = x * mask
-            x = masked_bchw
-        else:
-            x = x
+        # random_value = torch.round(torch.rand(1)).item()
+        # if(random_value == 1):
+        #     scale = random.randint(1, 4)
+        #     resolution = int(pow(2,scale))
+        #     patch_size = int(336/resolution)
+        #     self.len_keep = round(patch_size * patch_size * (1 - 0.25)) #165/168
+        #     active_b1ff,mask = self.mask(x.shape[0], patch_size, patch_size, x.device)
+        #     active_b1hw = active_b1ff.repeat_interleave(resolution, 2).repeat_interleave(resolution, 3)
+        #     mask = mask.repeat_interleave(resolution, 2).repeat_interleave(resolution, 3)
+        #     masked_bchw = x * mask
+        #     x = masked_bchw
+        # else:
+        #     x = x
+
+        # random_value = torch.round(torch.rand(1)).item()
+        # if(random_value == 1):
+        #     scale = random.randint(1, 4)
+        #     resolution = int(pow(2,scale))
+        #     patch_size = int(336/resolution)
+
+        #     mask_ratio = random.randint(10, 25) / 100
+
+        #     self.len_keep = round(patch_size * patch_size * (1 - mask_ratio)) #165/168
+
+        #     active_b1ff,mask = self.mask(x.shape[0], patch_size, patch_size, x.device)
+        #     active_b1hw = active_b1ff.repeat_interleave(resolution, 2).repeat_interleave(resolution, 3)
+        #     mask = mask.repeat_interleave(resolution, 2).repeat_interleave(resolution, 3)
+        #     # masked_bchw = x * self.mask_norm(mask.repeat(1, 3, 1, 1))
+        #     blur_bchw = x * active_b1hw.float() + self.create_gaussian_blur(x) * (1 - active_b1hw.float())
+        #     # comparison = torch.cat([x, self.mask_norm(mask.repeat(1, 3, 1, 1)), masked_bchw, blur_bchw,blur_bchw * self.mask_norm(mask.repeat(1, 3, 1, 1))], dim=0)
+        #     # torchvision.utils.save_image(comparison, 'comparison.png', nrow=x.size(0))
+        #     masked_bchw = blur_bchw
+        #     x = masked_bchw
+        # else:
+        #     x = x
+
+
+
+
+        # random_value = torch.round(torch.rand(1)).item()
+        # if(random_value == 1):
+        #     scale = random.randint(1, 4)
+        #     resolution = int(pow(2,scale))
+        #     patch_size = int(336/resolution)
+
+        #     # mask_ratio = random.randint(10, 25) / 100
+        #     mask_ratio = 0.25
+
+        #     self.len_keep = round(patch_size * patch_size * (1 - mask_ratio)) #165/168
+
+        #     active_b1ff,mask = self.mask(x.shape[0], patch_size, patch_size, x.device)
+        #     active_b1hw = active_b1ff.repeat_interleave(resolution, 2).repeat_interleave(resolution, 3)
+        #     mask = mask.repeat_interleave(resolution, 2).repeat_interleave(resolution, 3)
+        #     # masked_bchw = x * self.mask_norm(mask.repeat(1, 3, 1, 1))
+        #     blur_bchw = x * active_b1hw.float() + self.create_gaussian_blur(x,kernel_size = 5) * (1 - active_b1hw.float())
+        #     # comparison = torch.cat([x, self.mask_norm(mask.repeat(1, 3, 1, 1)), masked_bchw, blur_bchw,blur_bchw * self.mask_norm(mask.repeat(1, 3, 1, 1))], dim=0)
+        #     # torchvision.utils.save_image(comparison, 'comparison.png', nrow=x.size(0))
+        #     masked_bchw = blur_bchw * self.mask_norm(mask.repeat(1, 3, 1, 1))
+        #     x = masked_bchw
+        # else:
+        #     x = x
 
         x = self.conv1(x)  # shape = [*, width, grid, grid]
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
